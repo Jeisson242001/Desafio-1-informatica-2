@@ -86,3 +86,27 @@ static long find_substr(const unsigned char* hay, usize hayLen, const char* need
     }
     return -1;
 }
+
+// ---------------- RLE ASCII (ej: 11W1B12W...) ----------------
+static bool rle_decompress_ascii(const unsigned char* in, usize inLen, unsigned char** outBuf, usize* outLen){
+    *outBuf=nullptr; *outLen=0;
+    usize cap = inLen * 16 + 1024; if(cap < 4096) cap = 4096;
+    unsigned char* out = new (std::nothrow) unsigned char[cap]; if(!out) return false;
+    usize o=0, i=0;
+    while(i<inLen){
+        if(in[i]<'0' || in[i]>'9'){ delete[] out; return false; }
+        usize len=0, digits=0;
+        while(i<inLen && in[i]>='0' && in[i]<='9'){
+            len = len*10 + (usize)(in[i]-'0'); ++i; ++digits; if(digits>10){ delete[] out; return false; }
+        }
+        if(i>=inLen){ delete[] out; return false; }
+        unsigned char sym = in[i++]; // símbolo
+        if(len==0){ delete[] out; return false; }
+        if(o+len>cap){
+            usize newCap = (o+len)*2 + 1024; unsigned char* tmp = new (std::nothrow) unsigned char[newCap]; if(!tmp){ delete[] out; return false; }
+            for(usize k=0;k<o;++k) tmp[k]=out[k]; delete[] out; out=tmp; cap=newCap;
+        }
+        for(usize k=0;k<len;++k) out[o++]=sym;
+    }
+    *outBuf=out; *outLen=o; return true;
+}
