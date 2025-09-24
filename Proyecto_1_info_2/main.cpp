@@ -74,3 +74,15 @@ static void applyXorThenRotate(const unsigned char* in, usize len, unsigned char
         out[i] = useROL ? ROL8(v,n) : ROR8(v,n);
     }
 }
+
+
+// ---------------- búsqueda naive substring ----------------
+static long find_substr(const unsigned char* hay, usize hayLen, const char* needle){
+    usize nLen = cstr_len(needle);
+    if(nLen==0 || nLen>hayLen) return -1;
+    for(usize i=0; i + nLen <= hayLen; ++i){
+        usize j=0; while(j<nLen && hay[i+j] == (unsigned char)needle[j]) ++j;
+        if(j==nLen) return (long)i;
+    }
+    return -1;
+}
