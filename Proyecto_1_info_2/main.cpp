@@ -173,3 +173,19 @@ static bool lz78_decompress_le(const unsigned char* in, usize inLen, unsigned ch
 }
 
 
+// ---------------- heurística simple: ¿parece RLE ASCII? ----------------
+// detecta si el buffer contiene muchos dígitos y secuencias alternadas dígitos+carácter.
+static bool likely_rle_ascii(const unsigned char* in, usize inLen){
+    if(inLen < 2) return false;
+    int digits = 0;
+    int nonprint = 0;
+    for(usize i=0;i<inLen && i<512;++i){
+        unsigned char b = in[i];
+        if(b >= '0' && b <= '9') digits++;
+        if(b < 32 || b > 126) nonprint++;
+    }
+    // si hay muchos dígitos y pocos no-imprimibles, es probable RLE ASCII
+    if(digits > 8 && nonprint < (int)(inLen/10 + 1)) return true;
+    return false;
+}
+
