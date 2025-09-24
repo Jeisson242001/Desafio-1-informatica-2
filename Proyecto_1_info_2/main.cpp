@@ -131,3 +131,45 @@ static bool rle_decompress_bin_le(const unsigned char* in, usize inLen, unsigned
     *outBuf=out; *outLen=o; return true;
 }
 
+
+// ---------------- LZ78 LE (uint16 idx + char) ----------------
+static bool lz78_decompress_le(const unsigned char* in, usize inLen, unsigned char** outBuf, usize* outLen){
+    *outBuf=nullptr; *outLen=0; if(inLen<3) return false;
+    const usize MAX_ENTRIES = 65535ULL;
+    unsigned short* parent = new (std::nothrow) unsigned short[MAX_ENTRIES + 1];
+    unsigned char* ch = new (std::nothrow) unsigned char[MAX_ENTRIES + 1];
+    if(!parent || !ch){ if(parent) delete[] parent; if(ch) delete[] ch; return false; }
+
+    usize cap = inLen * 8 + 1024; if(cap < 4096) cap = 4096;
+    unsigned char* out = new (std::nothrow) unsigned char[cap]; if(!out){ delete[] parent; delete[] ch; return false; }
+    unsigned char* stack = new (std::nothrow) unsigned char[65537]; if(!stack){ delete[] parent; delete[] ch; delete[] out; return false; }
+
+    usize o=0, i=0; unsigned short nextIdx = 1;
+    while(i+2<inLen){
+        unsigned short idx = (unsigned short)(in[i] | (in[i+1] << 8)); i+=2;
+        unsigned char c = in[i++];
+        if(nextIdx > MAX_ENTRIES){ delete[] parent; delete[] ch; delete[] out; delete[] stack; return false; }
+        usize sp=0; unsigned short t = idx;
+        while(t!=0){
+            if(t>=nextIdx){ delete[] parent; delete[] ch; delete[] out; delete[] stack; return false; }
+            stack[sp++] = ch[t];
+            t = parent[t];
+            if(sp>65536){ delete[] parent; delete[] ch; delete[] out; delete[] stack; return false; }
+        }
+        if(o+sp+1>cap){
+            usize newCap=(o+sp+1)*2;
+            unsigned char* tmp=new (std::nothrow) unsigned char[newCap];
+            if(!tmp){ delete[] parent; delete[] ch; delete[] out; delete[] stack; return false; }
+            for(usize k=0;k<o;++k) tmp[k]=out[k];
+            delete[] out; out=tmp; cap=newCap;
+        }
+        for(usize k=0;k<sp;++k) out[o++]=stack[sp-1-k];
+        out[o++]=c;
+        parent[nextIdx]=idx; ch[nextIdx]=c; ++nextIdx;
+    }
+    if(i!=inLen){ delete[] parent; delete[] ch; delete[] out; delete[] stack; return false; }
+
+    delete[] parent; delete[] ch; delete[] stack; *outBuf=out; *outLen=o; return true;
+}
+
+
