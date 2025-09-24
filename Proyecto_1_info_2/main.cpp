@@ -110,3 +110,24 @@ static bool rle_decompress_ascii(const unsigned char* in, usize inLen, unsigned 
     }
     *outBuf=out; *outLen=o; return true;
 }
+
+
+// ---------------- RLE binario (uint16 LE len + símbolo) ----------------
+static bool rle_decompress_bin_le(const unsigned char* in, usize inLen, unsigned char** outBuf, usize* outLen){
+    *outBuf=nullptr; *outLen=0; if(inLen<3) return false;
+    usize cap = inLen * 32 + 1024; if(cap < 4096) cap = 4096;
+    unsigned char* out = new (std::nothrow) unsigned char[cap]; if(!out) return false;
+    usize o=0, i=0;
+    while(i+2<inLen){
+        unsigned short len = (unsigned short)(in[i] | (in[i+1] << 8)); i+=2;
+        unsigned char sym = in[i++]; if(len==0){ delete[] out; return false; }
+        if(o+len>cap){
+            usize newCap = (o+len)*2 + 1024; unsigned char* tmp = new (std::nothrow) unsigned char[newCap]; if(!tmp){ delete[] out; return false; }
+            for(usize k=0;k<o;++k) tmp[k]=out[k]; delete[] out; out=tmp; cap=newCap;
+        }
+        for(unsigned short k=0;k<len;++k) out[o++]=sym;
+    }
+    if(i!=inLen){ delete[] out; return false; }
+    *outBuf=out; *outLen=o; return true;
+}
+
