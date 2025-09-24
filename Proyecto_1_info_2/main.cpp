@@ -1,68 +1,76 @@
 #include <iostream>
 #include <fstream>
-using namespace std;
+#include <cstdint>
+#include <limits>
 
-// Funciones de desencriptación
-char rotarIzquierda(char c, int n) { return (c << n) | (c >> (8 - n)); }
-char rotarDerecha(char c, int n) { return (c >> n) | (c << (8 - n)); }
-char aplicarXOR(char c, char clave) { return c ^ clave; }
-char desencriptarChar(char c, int n, char clave) { return rotarDerecha(aplicarXOR(c, clave), n); }
+// ---------------- tipo tamaño ----------------
+typedef unsigned long long usize;
 
-// Función para encontrar n y K usando la pista
-bool encontrarParametros(const char* mensajeEnc, const char* pista, int lenPista, int &nCorrecto, char &KCorrecto) {
-    for (int n = 1; n <= 7; n++) {
-        for (int K = 0; K <= 255; K++) {
-            bool coincide = true;
-            for (int i = 0; i < lenPista; i++) {
-                char desen = desencriptarChar(mensajeEnc[i], n, (char)K);
-                if (desen != pista[i]) {
-                    coincide = false;
-                    break;
-                }
-            }
-            if (coincide) {
-                nCorrecto = n;
-                KCorrecto = (char)K;
-                return true;
-            }
-        }
-    }
-    return false;
+// ---------------- utilidades C-string ----------------
+static usize cstr_len(const char* s){
+    if(!s) return 0;
+    const char* p = s;
+    while(*p) ++p;
+    return (usize)(p - s);
+}
+static void utoa10(unsigned int v, char* buf){
+    char tmp[32]; int k=0;
+    if (v == 0) { buf[0]='0'; buf[1]='\0'; return; }
+    while (v > 0 && k < 31) { tmp[k++] = (char)('0' + (v % 10)); v /= 10; }
+    for (int i = 0; i < k; ++i) buf[i] = tmp[k-1-i];
+    buf[k] = '\0';
 }
 
-int main() {
-    // Leer archivo Encriptado1.txt
-    ifstream fEnc("C:\\Users\\LENOVO\\OneDrive\\Desktop\\Desafio_1\\Encriptado1.txt", ios::binary);
-    if (!fEnc) { cout << "No se pudo abrir Encriptado1.txt\n"; return 1; }
-    fEnc.seekg(0, ios::end);
-    int lenEnc = fEnc.tellg();
-    fEnc.seekg(0, ios::beg);
-    char* mensajeEnc = new char[lenEnc];
-    fEnc.read(mensajeEnc, lenEnc);
-    fEnc.close();
+// ---------------- construir nombres sin overflow ----------------
+static bool make_name_safe(const char* base, const char* pref, unsigned int num, const char* suf, char* out, usize outSize){
+    usize baseL = cstr_len(base);
+    char numbuf[32]; utoa10(num, numbuf);
+    usize total = baseL + cstr_len(pref) + cstr_len(numbuf) + cstr_len(suf) + 1;
+    if (total > outSize) return false;
+    char* p = out;
+    const char* q = base; while(*q) *p++ = *q++;
+    q = pref; while(*q) *p++ = *q++;
+    q = numbuf; while(*q) *p++ = *q++;
+    q = suf; while(*q) *p++ = *q++;
+    *p = '\0';
+    return true;
+}
 
-    // Leer archivo pista1.txt
-    ifstream fPista("C:\\Users\\LENOVO\\OneDrive\\Desktop\\Desafio_1\\pista1.txt", ios::binary);
-    if (!fPista) { cout << "No se pudo abrir pista1.txt\n"; delete[] mensajeEnc; return 1; }
-    fPista.seekg(0, ios::end);
-    int lenPista = fPista.tellg();
-    fPista.seekg(0, ios::beg);
-    char* pista = new char[lenPista];
-    fPista.read(pista, lenPista);
-    fPista.close();
+// ---------------- I/O binaria ----------------
+static unsigned char* readFile(const char* path, usize& outLen) {
+    outLen = 0;
+    std::ifstream f(path, std::ios::binary);
+    if(!f.good()) return nullptr;
+    f.seekg(0, std::ios::end);
+    std::streamoff sz = f.tellg();
+    if(sz < 0){ f.close(); return nullptr; }
+    if(sz == 0){ f.close(); outLen=0; unsigned char* b = new (std::nothrow) unsigned char[1]; if(b) b[0]=0; return b; }
+    f.seekg(0, std::ios::beg);
+    unsigned char* buf = new (std::nothrow) unsigned char[(usize)sz];
+    if(!buf){ f.close(); return nullptr; }
+    f.read(reinterpret_cast<char*>(buf), sz);
+    if(!f){ delete[] buf; f.close(); return nullptr; }
+    f.close();
+    outLen = (usize)sz;
+    return buf;
+}
+static bool writeFile(const char* path, const unsigned char* buf, usize len){
+    std::ofstream f(path, std::ios::binary);
+    if(!f.good()) return false;
+    f.write(reinterpret_cast<const char*>(buf), (std::streamsize)len);
+    bool ok = (bool)f;
+    f.close();
+    return ok;
+}
 
-    // Buscar n y K
-    int nCorrecto;
-    char KCorrecto;
-    if (encontrarParametros(mensajeEnc, pista, lenPista, nCorrecto, KCorrecto)) {
-        cout << "Parámetros encontrados:\n";
-        cout << "n (rotación bits) = " << nCorrecto << "\n";
-        cout << "K (clave XOR) = " << (int)KCorrecto << "\n";
-    } else {
-        cout << "No se encontraron parámetros que coincidan con la pista.\n";
+// ---------------- rotaciones y XOR ----------------
+static inline unsigned char ROL8(unsigned char b, int n){ n &= 7; if(!n) return b; return (unsigned char)(((b << n) | (b >> (8 - n))) & 0xFF); }
+static inline unsigned char ROR8(unsigned char b, int n){ n &= 7; if(!n) return b; return (unsigned char)(((b >> n) | (b << (8 - n))) & 0xFF); }
+static inline unsigned char XOR8(unsigned char b, unsigned char K){ return (unsigned char)(b ^ K); }
+// Aplica XOR then rotate (useROL=true => ROL, false => ROR)
+static void applyXorThenRotate(const unsigned char* in, usize len, unsigned char K, int n, bool useROL, unsigned char* out){
+    for(usize i=0;i<len;++i){
+        unsigned char v = XOR8(in[i], K);
+        out[i] = useROL ? ROL8(v,n) : ROR8(v,n);
     }
-
-    delete[] mensajeEnc;
-    delete[] pista;
-    return 0;
 }
