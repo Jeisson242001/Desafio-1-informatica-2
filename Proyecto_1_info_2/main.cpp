@@ -115,3 +115,67 @@ static bool rle_decompress_bin_triplet(const unsigned char* in, usize inLen, uns
     *outBuf = out; *outLen = o;
     return true;
 }
+
+// ----------------- LZ78 LE -----------------
+struct LZDictEntry { unsigned short prefix; unsigned char c; };
+
+static bool lz78_decompress_le(const unsigned char* in, usize inLen, unsigned char** outBuf, usize* outLen) {
+    *outBuf = nullptr; *outLen = 0;
+    if (inLen < 3) return false;
+    if (inLen % 3 != 0) return false;
+
+    usize cap = inLen * 32 + 1024;
+    if (cap < 8192) cap = 8192;
+    unsigned char* out = new (nothrow) unsigned char[cap];
+    if (!out) return false;
+
+    usize o = 0;
+    usize dictCap = inLen / 3 + 4;
+    LZDictEntry* dict = new (nothrow) LZDictEntry[dictCap];
+    if (!dict) { delete[] out; return false; }
+    usize dictSize = 1; // índice 0 reservado
+
+    for (usize i = 0; i < inLen; i += 3) {
+        unsigned short prefix = (unsigned short)(in[i] | (in[i + 1] << 8));
+        unsigned char c = in[i + 2];
+
+        // reconstruir cadena del prefijo
+        unsigned char tmp[65536];
+        usize tlen = 0;
+        unsigned short p = prefix;
+        while (p != 0 && p < dictSize && tlen < sizeof(tmp) - 1) {
+            tmp[tlen++] = dict[p].c;
+            p = dict[p].prefix;
+        }
+        // escribir cadena prefijo invertida
+        for (usize j = 0; j < tlen; j++) {
+            if (o >= cap) {
+                usize newCap = cap * 2 + 1024;
+                unsigned char* tmp2 = new (nothrow) unsigned char[newCap];
+                if (!tmp2) { delete[] out; delete[] dict; return false; }
+                for (usize k = 0; k < o; k++) tmp2[k] = out[k];
+                delete[] out; out = tmp2; cap = newCap;
+            }
+            out[o++] = tmp[tlen - 1 - j];
+        }
+        // añadir el caracter final
+        if (o >= cap) {
+            usize newCap = cap * 2 + 1024;
+            unsigned char* tmp2 = new (nothrow) unsigned char[newCap];
+            if (!tmp2) { delete[] out; delete[] dict; return false; }
+            for (usize k = 0; k < o; k++) tmp2[k] = out[k];
+            delete[] out; out = tmp2; cap = newCap;
+        }
+        out[o++] = c;
+
+        if (dictSize < dictCap) {
+            dict[dictSize].prefix = prefix;
+            dict[dictSize].c = c;
+            dictSize++;
+        }
+    }
+    delete[] dict;
+    *outBuf = out; *outLen = o;
+    return true;
+}
+
