@@ -57,7 +57,6 @@ static bool rle_decompress_ascii(const unsigned char* in, usize inLen, unsigned 
     return true;
 }
 
-
 // ----------------- RLE BIN LE (clásico) -----------------
 static bool rle_decompress_bin_le(const unsigned char* in, usize inLen, unsigned char** outBuf, usize* outLen) {
     *outBuf = nullptr; *outLen = 0;
@@ -73,6 +72,36 @@ static bool rle_decompress_bin_le(const unsigned char* in, usize inLen, unsigned
     for (usize i = 0; i < inLen; i += 2) {
         unsigned char len = in[i];
         unsigned char sym = in[i + 1];
+        if (len == 0) { delete[] out; return false; }
+        if (o + len > cap) {
+            usize newCap = (o + len) * 2 + 1024;
+            unsigned char* tmp = new (nothrow) unsigned char[newCap];
+            if (!tmp) { delete[] out; return false; }
+            for (usize k = 0; k < o; ++k) tmp[k] = out[k];
+            delete[] out; out = tmp; cap = newCap;
+        }
+        for (unsigned int k = 0; k < len; ++k) out[o++] = sym;
+    }
+    *outBuf = out; *outLen = o;
+    return true;
+}
+
+// ----------------- RLE BIN TRIPLET (dataset) -----------------
+// formato: [basura][len][sym]
+static bool rle_decompress_bin_triplet(const unsigned char* in, usize inLen, unsigned char** outBuf, usize* outLen) {
+    *outBuf = nullptr; *outLen = 0;
+    if (inLen < 3) return false;
+    if (inLen % 3 != 0) return false;
+
+    usize cap = inLen * 16 + 1024;
+    if (cap < 4096) cap = 4096;
+    unsigned char* out = new (nothrow) unsigned char[cap];
+    if (!out) return false;
+
+    usize o = 0;
+    for (usize i = 0; i < inLen; i += 3) {
+        unsigned char len = in[i + 1];
+        unsigned char sym = in[i + 2];
         if (len == 0) { delete[] out; return false; }
         if (o + len > cap) {
             usize newCap = (o + len) * 2 + 1024;
