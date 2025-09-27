@@ -179,3 +179,26 @@ static bool lz78_decompress_le(const unsigned char* in, usize inLen, unsigned ch
     return true;
 }
 
+// ----------------- try_all_decompress -----------------
+static bool try_all_decompress(const unsigned char* in, usize inLen,
+                               unsigned char** out, usize* outLen, int* which) {
+    *which = 0; *out = nullptr; *outLen = 0;
+    unsigned char* buf = nullptr; usize blen = 0;
+
+    if (rle_decompress_bin_triplet(in, inLen, &buf, &blen)) {
+        *out = buf; *outLen = blen; *which = 4; return true;
+    }
+    if (rle_decompress_bin_le(in, inLen, &buf, &blen)) {
+        *out = buf; *outLen = blen; *which = 2; return true;
+    }
+    if (lz78_decompress_le(in, inLen, &buf, &blen)) {
+        *out = buf; *outLen = blen; *which = 3; return true;
+    }
+    if (rle_decompress_ascii(in, inLen, &buf, &blen)) {
+        *out = buf; *outLen = blen; *which = 1; return true;
+    }
+
+    return false;
+}
+
+
