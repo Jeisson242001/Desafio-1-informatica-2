@@ -201,4 +201,77 @@ static bool try_all_decompress(const unsigned char* in, usize inLen,
     return false;
 }
 
+static const char* methodNameReport(int which) {
+    if (which == 1) return "RLE_ASCII";
+    if (which == 2) return "RLE_BIN_LE";
+    if (which == 3) return "LZ78_LE";
+    if (which == 4) return "RLE_BIN_TRIPLET (dataset)";
+    return "UNKNOWN";
+}
+
+// ----------------- main -----------------
+int main() {
+    int n;
+    cout << "Cantidad maxima de casos a evaluar (n): ";
+    cin >> n;
+
+    for (int caso = 1; caso <= n; caso++) {
+        char fname[64], fpista[64];
+        sprintf(fname, "Encriptado%d.txt", caso);
+        sprintf(fpista, "pista%d.txt", caso);
+
+        ifstream fin(fname, ios::binary);
+        if (!fin) { cout << "- Saltando " << fname << endl; continue; }
+        fin.seekg(0, ios::end); usize len = fin.tellg(); fin.seekg(0);
+        unsigned char* encBuf = new unsigned char[len];
+        fin.read((char*)encBuf, len); fin.close();
+
+        ifstream fp(fpista, ios::binary);
+        if (!fp) { cout << "- No existe " << fpista << endl; delete[] encBuf; continue; }
+        fp.seekg(0, ios::end); usize plen = fp.tellg(); fp.seekg(0);
+        unsigned char* pistaBuf = new unsigned char[plen + 1];
+        fp.read((char*)pistaBuf, plen); pistaBuf[plen] = 0; fp.close();
+
+        cout << "\n=== Procesando caso " << caso << " (" << len << " bytes) ===" << endl;
+
+        bool found = false;
+        for (int rot = 1; rot <= 7 && !found; rot++) {
+            for (int K = 0; K < 256 && !found; K++) {
+                unsigned char* decBuf = new unsigned char[len];
+                desencriptar(encBuf, len, decBuf, rot, (unsigned char)K);
+
+                unsigned char* plain = nullptr; usize plainLen = 0; int which = 0;
+                if (try_all_decompress(decBuf, len, &plain, &plainLen, &which)) {
+                    // buscar pista
+                    bool match = false;
+                    for (usize i = 0; i + plen <= plainLen; i++) {
+                        usize j = 0;
+                        while (j < plen && plain[i + j] == pistaBuf[j]) j++;
+                        if (j == plen) { match = true; break; }
+                    }
+                    if (match) {
+                        cout << "\n** " << fname << " **" << endl;
+                        cout << "Compresion: " << methodNameReport(which) << endl;
+                        cout << "Rotacion (n): " << rot << endl;
+                        cout << "Key= 0x" << hex << K << dec << endl;
+                        cout << "Mensaje desencriptado:\n";
+                        for (usize i = 0; i < plainLen; i++) cout << (char)plain[i];
+                        cout << "\n";
+                        found = true;
+                        delete[] plain;
+                    } else {
+                        delete[] plain;
+                    }
+                }
+                delete[] decBuf;
+            }
+        }
+        if (!found) {
+            cout << "No se encontro combinacion valida en " << fname << endl;
+        }
+        delete[] encBuf;
+        delete[] pistaBuf;
+    }
+    return 0;
+}
 
